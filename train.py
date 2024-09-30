@@ -31,12 +31,12 @@ lr = 4e-5
 accumulation_steps = 16 # 根据你的显存情况可以调整
 args = None
 resolution = 1024
-random_flip = False
+random_flip = True
 index_file = "dataset/porcelain/jsons/porcelain_mt.json"
 multireso = True
-random_shrink_size_cond = False
 global_seed = 114514
 num_workers = 4
+save_every_step = 10000
 
 # 加载并设置VAE模型
 vae = load_vae(vae_id, dtype)
@@ -64,8 +64,7 @@ dataset = TextImageArrowStream(args=args,
                                index_file=index_file,
                                multireso=multireso,
                                batch_size=batch_size,
-                               world_size=accelerator.num_processes,
-                               random_shrink_size_cond=random_shrink_size_cond,
+                               world_size=accelerator.num_processes
                                )
 
 if multireso:
@@ -131,6 +130,14 @@ for epoch in range(num_epochs):
             optimizer.step()
             optimizer.zero_grad()
 
+            accelerator.print(f"Epoch [{epoch + 1}/{num_epochs}], "
+            f"Step [{global_step}], "
+            f"Batch [{batch_idx + 1}/{len(train_loader)}], "
+            f"Loss: {loss.item() * accumulation_steps:.4f}, "
+            f"Batch Time: {batch_time:.2f}s, "
+            f"Elapsed: {formatted_elapsed_time}, "
+            f"ETA: {formatted_remaining_time}")
+
         running_loss += loss.item() * accumulation_steps
 
         # 每步记录和更新时间
@@ -144,20 +151,27 @@ for epoch in range(num_epochs):
         formatted_elapsed_time = format_time(elapsed_time)
         formatted_remaining_time = format_time(remaining_time)
 
-        logger.info(f"Epoch [{epoch + 1}/{num_epochs}], "
-                    f"Step [{global_step}], "
-                    f"Batch [{batch_idx + 1}/{len(train_loader)}], "
-                    f"Loss: {loss.item() * accumulation_steps:.4f}, "
-                    f"Batch Time: {batch_time:.2f}s, "
-                    f"Elapsed: {formatted_elapsed_time}, "
-                    f"ETA: {formatted_remaining_time}")
+
+
+        # 完成每1000步后保存模型状态
+        if global_step % save_every_step == 0:
+            accelerator.wait_for_everyone()
+            if accelerator.is_main_process:
+                state_dict = accelerator.unwrap_model(vae).state_dict()
+                os.makedirs(f"output_{batch_size * accumulation_steps}_{lr}", exist_ok=True)
+                accelerator.save(state_dict, f"output_{batch_size * accumulation_steps}_{lr}/vae_trainer_step_{global_step}.safetensors")
+                # save_file(state_dict, f"output_{batch_size * accumulation_steps}_{lr}/vae_trainer_step_{global_step}.safetensors")
+                accelerator.print(f"Saved model at global step {global_step}")
+
 
     epoch_time = time.time() - epoch_start_time  # 计算 epoch 花费时间
     logger.info(f"Epoch [{epoch + 1}/{num_epochs}] completed with Loss: {running_loss / len(train_loader):.4f}, Total Time: {format_time(epoch_time)}")
+    accelerator.wait_for_everyone()
+    if accelerator.is_main_process:
+        # 保存每个epoch结束时模型状态
+        state_dict = accelerator.unwrap_model(vae).state_dict()
+        os.makedirs(f"output_{batch_size * accumulation_steps}_{lr}", exist_ok=True)
+        accelerator.save(state_dict, f"output_{batch_size * accumulation_steps}_{lr}/vae_trainer_epoch_{epoch + 1}.safetensors")
 
-    # 保存模型状态为safetensors文件
-    state_dict = accelerator.unwrap_model(vae).state_dict()
-    os.makedirs(f"output_{batch_size * accumulation_steps}_{lr}", exist_ok=True)
-    save_file(state_dict, f"output_{batch_size * accumulation_steps}_{lr}/vae_trainer_epoch_{epoch + 1}.safetensors")
 
 logger.info("Training Complete.")
