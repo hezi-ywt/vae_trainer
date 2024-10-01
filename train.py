@@ -36,7 +36,7 @@ index_file = "dataset/porcelain/jsons/porcelain_mt.json"
 multireso = True
 global_seed = 114514
 num_workers = 4
-save_every_step = 10000
+save_every_step = 100
 
 # 加载并设置VAE模型
 vae = load_vae(vae_id, dtype)
@@ -159,8 +159,7 @@ for epoch in range(num_epochs):
             if accelerator.is_main_process:
                 state_dict = accelerator.unwrap_model(vae).state_dict()
                 os.makedirs(f"output_{batch_size * accumulation_steps}_{lr}", exist_ok=True)
-                accelerator.save(state_dict, f"output_{batch_size * accumulation_steps}_{lr}/vae_trainer_step_{global_step}.safetensors")
-                # save_file(state_dict, f"output_{batch_size * accumulation_steps}_{lr}/vae_trainer_step_{global_step}.safetensors")
+                save_file(state_dict, f"output_{batch_size * accumulation_steps}_{lr}/vae_trainer_step_{global_step}.safetensors")
                 accelerator.print(f"Saved model at global step {global_step}")
 
 
@@ -171,7 +170,6 @@ for epoch in range(num_epochs):
         # 保存每个epoch结束时模型状态
         state_dict = accelerator.unwrap_model(vae).state_dict()
         os.makedirs(f"output_{batch_size * accumulation_steps}_{lr}", exist_ok=True)
-        accelerator.save(state_dict, f"output_{batch_size * accumulation_steps}_{lr}/vae_trainer_epoch_{epoch + 1}.safetensors")
-
+       
 
 logger.info("Training Complete.")
